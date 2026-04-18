@@ -1,150 +1,142 @@
 # CrossExtend-KG Project Architecture
 
-**Updated**: 2026-04-17  
-**Status**: Active runtime architecture
-
-## Overview
-
-CrossExtend-KG now keeps only the main construction architecture:
-
-- fixed backbone from `backbone.seed_concepts`
-- optional curated shared concepts from `domains[].ontology_seed_path`
-- uniform domain handling with `role="target"`
-- attachment, filtering, graph assembly, snapshots, and artifact export
-
-Evaluation-only packages and downstream-task utilities are no longer part of the active tree.
+**Updated**: 2026-04-18  
+**Status**: Current O&M-form runtime layout
 
 ## Repository Layout
 
 ```text
-Auto-claude-code-research-in-sleep/
-├── pyproject.toml
-├── crossextend_kg/
-│   ├── __init__.py
-│   ├── cli.py
-│   ├── config.py
-│   ├── models.py
-│   ├── io.py
-│   ├── exceptions.py
-│   ├── logging_config.py
-│   ├── validation.py
-│   ├── README.md
-│   ├── README_CN.md
-│   ├── backends/
-│   │   ├── embeddings.py
-│   │   └── llm.py
-│   ├── config/
-│   │   ├── README.md
-│   │   ├── persistent/
-│   │   ├── prompts/
-│   │   └── templates/
-│   ├── docs/
-│   │   ├── README.md
-│   │   ├── SYSTEM_DESIGN.md
-│   │   ├── PIPELINE_INTEGRATION.md
-│   │   └── PROJECT_ARCHITECTURE.md
-│   ├── pipeline/
-│   │   ├── __init__.py
-│   │   ├── runner.py
-│   │   ├── evidence.py
-│   │   ├── backbone.py
-│   │   ├── router.py
-│   │   ├── attachment.py
-│   │   ├── memory.py
-│   │   ├── graph.py
-│   │   ├── relation_validation.py
-│   │   ├── artifacts.py
-│   │   └── utils.py
-│   ├── preprocessing/
-│   ├── rules/
-│   │   ├── __init__.py
-│   │   └── filtering.py
-│   ├── scripts/
-│   │   └── visualize_propagation.py
-│   ├── data/
-│   └── artifacts/
-└── tests/
-    └── test_crossextend_kg_regressions.py
+crossextend_kg/
+  backends/
+    embeddings.py
+    llm.py
+  config/
+    persistent/
+    prompts/
+    templates/
+    README.md
+  data/
+    battery/
+    cnc/
+    nev/
+    evidence_records_llm.json
+  docs/
+    README.md
+    SYSTEM_DESIGN.md
+    PIPELINE_INTEGRATION.md
+    PROJECT_ARCHITECTURE.md
+    EXECUTION_MEMORY.md
+    MANUAL_ANNOTATION_PROTOCOL.md
+    REAL_RUN_DATA_FLOW_OM_3DOMAIN_20260418.md
+    REAL_RUN_DATA_FLOW_OM_3DOMAIN_20260418_CN.md
+  pipeline/
+    artifacts.py
+    attachment.py
+    backbone.py
+    evidence.py
+    graph.py
+    memory.py
+    relation_validation.py
+    router.py
+    runner.py
+    utils.py
+  preprocessing/
+    extractor.py
+    models.py
+    parser.py
+    processor.py
+    README.md
+  rules/
+    filtering.py
+  scripts/
+    visualize_propagation.py
+  tests/
+    conftest.py
+    test_filtering_rules.py
+    test_memory_bank.py
+    test_preprocessing_om_contract.py
+  artifacts/
+  README.md
+  cli.py
+  config.py
+  exceptions.py
+  io.py
+  logging_config.py
+  models.py
+  validation.py
 ```
 
-## Runtime Chain
+## Module Responsibilities
 
-1. `preprocessing/` converts raw documents into `EvidenceRecord` JSON.
-2. `pipeline/evidence.py` loads records and aggregates concept-level `SchemaCandidate`s per domain.
-3. `pipeline/backbone.py` builds the frozen shared backbone from seed concepts plus curated supplements.
-4. `pipeline/router.py` retrieves candidate-to-backbone anchors with embeddings.
-5. `pipeline/memory.py` retrieves historical context from the temporal memory bank.
-6. `pipeline/attachment.py` produces attachment decisions for each variant.
-7. `rules/filtering.py` validates or rejects illegal routing decisions.
-8. `pipeline/graph.py` materializes domain schemas, triples, edges, and snapshot artifacts.
-9. `pipeline/artifacts.py` exports auditable per-variant outputs and structure summaries.
+### `preprocessing/`
 
-## Key Interfaces
+Converts raw O&M markdown into `EvidenceRecord`.
 
-### Configuration
+Important files:
 
-- `config.py`
-- `PipelineConfig`, `VariantConfig`, `DomainConfig`
-- active prompt fields: `attachment_judge_template_path`, `synthetic_generator_template_path`
+- `parser.py`
+  File reading, filename-based doc-type inference, BOM stripping, content normalization
+- `extractor.py`
+  LLM extraction wrapper
+- `processor.py`
+  Multi-domain preprocessing orchestration and relation-label normalization
 
-### Backbone
+### `pipeline/`
 
-- `pipeline/backbone.py`
-- `build_backbone(config) -> (backbone_concepts, backbone_descriptions, curated_backbone_concepts)`
+Runs the main construction chain.
 
-### Variants
+Important files:
 
-Variants remain as switch packs on the same chain. Typical variant ids are:
+- `evidence.py`
+  Load and aggregate `SchemaCandidate`
+- `backbone.py`
+  Build the fixed backbone
+- `router.py`
+  Embedding-based backbone anchor retrieval
+- `memory.py`
+  Temporal memory-bank retrieval and persistence
+- `attachment.py`
+  LLM or deterministic attachment decisions
+- `graph.py`
+  Graph assembly, relation validation, and snapshots
+- `artifacts.py`
+  Disk export and summaries
+- `runner.py`
+  End-to-end orchestration
 
-- `full_llm`
-- `no_memory_bank`
-- `no_embedding_routing`
-- `no_rule_filter`
-- `embedding_only`
-- `deterministic_baseline`
+### `rules/`
 
-## Artifact Layout
+- `filtering.py`
+  Final node-admission policy, person/document rejection, O&M task rescue, and observation grounding
 
-Each variant exports to:
+### `config/`
 
-```text
-<artifact_root>/<run_prefix>-<timestamp>/<variant_id>/
-├── run_meta.json
-├── backbone_seed.json
-├── backbone_final.json
-├── backbone.json
-├── construction_summary.json
-├── temporal_memory_entries.jsonl
-└── working/<domain_id>/
-    ├── evidence_units.jsonl
-    ├── schema_candidates.jsonl
-    ├── adapter_schema.json
-    ├── adapter_candidates.json
-    ├── attachment_decisions.json
-    ├── retrievals.json
-    ├── historical_context.json
-    ├── graph_nodes.jsonl
-    ├── graph_edges.jsonl
-    ├── candidate_triples.jsonl
-    ├── relation_edges.*.json
-    ├── final_graph.json
-    ├── temporal_assertions.jsonl
-    ├── snapshot_manifest.jsonl
-    ├── snapshots/<snapshot_id>/
-    │   ├── nodes.jsonl
-    │   ├── edges.jsonl
-    │   └── consistency.json
-    └── exports/
-```
+- `persistent/`
+  Daily-use presets
+- `prompts/`
+  Attachment and preprocessing prompts
+- `templates/`
+  Reference configuration template
 
-## Current Regression Coverage
+### `docs/`
 
-`tests/test_crossextend_kg_regressions.py` checks:
+Paper-facing architecture, run notes, and annotation guidance.
 
-- persistent pipeline configs still load
-- predefined backbone loading remains fixed
-- preprocessing config path/env expansion works
-- minimal backend config fields remain sufficient
-- legacy `host` aliases still upgrade to `base_url`
-- removed evaluation-era fields do not reappear in configs
-- the reference config template stays valid JSON
+## Active Data Shape
+
+The current paper pipeline assumes:
+
+- raw input: markdown O&M forms
+- preprocessing output: `EvidenceRecord`
+- graph scope: concept layer plus temporal snapshot exports
+
+It does not currently assume:
+
+- downstream product analysis
+- standalone fault-case corpus processing
+- dynamic backbone construction
+
+## Current Notable Absences
+
+- No downstream evaluation package is active in the current paper path.
+- No dynamic backbone-growth package is active in the current paper path.

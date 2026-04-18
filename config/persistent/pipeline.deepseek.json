@@ -4,8 +4,7 @@
   "project_name": "CrossExtend-KG",
   "benchmark_name": "deepseek_experiment",
   "prompts": {
-    "attachment_judge_template_path": "../prompts/attachment_judge.txt",
-    "synthetic_generator_template_path": "../prompts/synthetic_generator_english.txt"
+    "attachment_judge_template_path": "../prompts/attachment_judge.txt"
   },
   "llm": {
     "base_url": "https://api.deepseek.com",
@@ -72,12 +71,6 @@
     ]
   },
   "data": {
-    "synthetic_generation": {
-      "enabled": false,
-      "output_path": "../../artifacts/data/synthetic_samples.json",
-      "num_samples": 10,
-      "domain_sample_counts": {}
-    },
     "normalize_whitespace": true
   },
   "runtime": {
@@ -117,8 +110,7 @@
       "data_path": "../../data/evidence_records_llm.json",
       "ontology_seed_path": null,
       "source_types": [
-        "fault_case",
-        "product_intro"
+        "om_manual"
       ],
       "domain_keywords": [
         "battery",
@@ -137,8 +129,7 @@
       "data_path": "../../data/evidence_records_llm.json",
       "ontology_seed_path": null,
       "source_types": [
-        "fault_case",
-        "product_intro"
+        "om_manual"
       ],
       "domain_keywords": [
         "cnc",
@@ -157,8 +148,7 @@
       "data_path": "../../data/evidence_records_llm.json",
       "ontology_seed_path": null,
       "source_types": [
-        "fault_case",
-        "product_intro"
+        "om_manual"
       ],
       "domain_keywords": [
         "nev",

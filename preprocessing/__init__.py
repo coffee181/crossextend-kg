@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
-"""Preprocessing module for converting raw industrial documents to EvidenceRecords.
+"""Preprocessing module for converting O&M markdown to EvidenceRecords.
 
 This module provides tools to:
-- Parse markdown documents (fault cases, product introductions, maintenance logs)
-- Extract concepts and relations using LLM
-- Generate EvidenceRecords compatible with CrossExtend-KG pipeline
+- parse markdown O&M manuals
+- extract concepts and relations using LLM
+- generate EvidenceRecords compatible with CrossExtend-KG
 
 Supported directory structure:
     data_root/
     ├── battery/
-    │   ├── products/*.md
-    │   └── fault_cases/*.md
+    │   └── BATOM_001.md
     ├── cnc/
-    │   ├── products/*.md
-    │   └── fault_cases/*.md
+    │   └── CNCOM_001.md
     └── nev/
-    │   ├── products/*.md
-    │   └── fault_cases/*.md
+        └── EVMAN_001.md
 
 Public API:
 - run_preprocessing: Full preprocessing pipeline from config
@@ -26,36 +23,32 @@ Public API:
 
 from __future__ import annotations
 
+from .extractor import LLMExtractor, build_extractor
 from .models import DocumentInput, ExtractionResult, PreprocessingConfig, PreprocessingResult
 from .parser import (
-    parse_markdown_file,
-    parse_markdown_directory,
-    parse_domain_directory,
-    parse_multi_domain_directory,
     classify_doc_type,
+    infer_doc_type_from_filename,
     normalize_content,
+    parse_markdown_directory,
+    parse_markdown_file,
+    parse_multi_domain_directory,
 )
-from .processor import run_preprocessing, preprocess_single_document, load_preprocessing_config
-from .extractor import LLMExtractor, build_extractor
+from .processor import load_preprocessing_config, preprocess_single_document, run_preprocessing
 
 __all__ = [
-    # Models
     "DocumentInput",
     "ExtractionResult",
     "PreprocessingConfig",
     "PreprocessingResult",
-    # Parser
     "parse_markdown_file",
     "parse_markdown_directory",
-    "parse_domain_directory",
     "parse_multi_domain_directory",
     "classify_doc_type",
+    "infer_doc_type_from_filename",
     "normalize_content",
-    # Processor
     "run_preprocessing",
     "preprocess_single_document",
     "load_preprocessing_config",
-    # Extractor
     "LLMExtractor",
     "build_extractor",
 ]

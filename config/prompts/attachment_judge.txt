@@ -13,6 +13,8 @@ Requirements:
 10. Components, mechanisms, and other industrial entities should be admitted only when they both anchor to the backbone and participate in the relation chain.
 11. If you reject a candidate, you must set `route=reject`, `accept=false`, `admit_as_node=false`, and use exactly one reject reason from this closed set:
     `person_name`, `document_title`, `observation_like_not_grounded`, `cannot_anchor_backbone`, `weak_relation_support`, `low_graph_value`, `unsupported_semantic_type`, `route_not_allowed`, `invalid_backbone_parent`, `llm_no_decision`, `backbone_label_mismatch`.
+12. Any label that starts with `T<number>` is an O&M step and should normally be `vertical_specialize` under `Task`, even if the label contains words such as `report`, `document`, `mark`, or `photograph`.
+13. O&M observation labels such as `pressure result`, `fresh wetting`, `residue path`, `leak path`, `insertion depth`, or `wet after shutdown` should usually be grounded as `Signal` or `State`, not rejected by default.
 
 Current domain:
 __DOMAIN_ID__

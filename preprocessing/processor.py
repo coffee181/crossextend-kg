@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Main processor for converting raw documents to EvidenceRecords."""
+"""Main processor for converting O&M markdown to EvidenceRecords."""
 
 from __future__ import annotations
 
@@ -13,11 +13,13 @@ from typing import Any
 
 from ..io import ensure_dir, write_json
 from ..models import ConceptMention, EvidenceRecord, RelationMention
-from .extractor import LLMExtractor, build_extractor
+from .extractor import build_extractor
 from .models import DocumentInput, ExtractionResult, PreprocessingConfig, PreprocessingResult
 from .parser import (
     parse_multi_domain_directory,
-    normalize_content
+    classify_doc_type,
+    infer_doc_type_from_filename,
+    normalize_content,
 )
 
 
@@ -33,6 +35,7 @@ _ACTIVE_RELATION_RULES: dict[str, tuple[str, str, bool]] = {
     "requires": ("requires", "task_dependency", False),
     "measures": ("measures", "task_dependency", False),
     "confirms": ("confirms", "task_dependency", False),
+    "separates": ("confirms", "task_dependency", False),
     "observes": ("observes", "task_dependency", False),
     "performs": ("performs", "task_dependency", False),
     "triggers": ("triggers", "propagation", False),
@@ -44,6 +47,25 @@ _ACTIVE_RELATION_RULES: dict[str, tuple[str, str, bool]] = {
     "observedin": ("observes", "task_dependency", True),
     "performedby": ("performs", "task_dependency", True),
 }
+_FAMILY_PRESERVE_BY_LABEL: dict[str, set[str]] = {
+    "contains": {"structural"},
+    "hasState": {"lifecycle"},
+    "transitionsTo": {"lifecycle"},
+    "indicates": {"communication"},
+    "provides": {"communication"},
+    "emits": {"communication"},
+    "monitors": {"communication"},
+    "requires": {"task_dependency"},
+    "measures": {"task_dependency"},
+    "confirms": {"task_dependency"},
+    "observes": {"task_dependency"},
+    "performs": {"task_dependency"},
+    # O&M manuals use Task triggers Task for ordered execution steps.
+    "triggers": {"task_dependency", "propagation"},
+    "causes": {"propagation"},
+    "comprises": {"propagation"},
+}
+_MAX_DOC_CONTENT_LENGTH = 20000
 
 
 def _expand_env_in_string(value: str) -> str:
@@ -97,9 +119,11 @@ def _normalize_relation_entry(relation_data: dict[str, Any]) -> dict[str, str] |
 
     rule = _ACTIVE_RELATION_RULES.get(_normalize_relation_label_key(label))
     if rule:
-        normalized_label, normalized_family, should_flip = rule
+        normalized_label, default_family, should_flip = rule
         if should_flip:
             normalized_head, normalized_tail = tail, head
+        allowed_input_families = _FAMILY_PRESERVE_BY_LABEL.get(normalized_label, {default_family})
+        normalized_family = family if family in allowed_input_families else default_family
 
     return {
         "label": normalized_label,
@@ -115,15 +139,12 @@ def run_preprocessing(
 ) -> PreprocessingResult:
     """Run preprocessing pipeline from config.
 
-    Unified Construction Method:
-    - All domains are equally treated as application cases
-    - LLM extraction is REQUIRED - no fallback allowed
-    - Multi-domain processing is the only supported mode
-
-    Expected structure:
-    - data_root/{domain}/products/*.md
-    - data_root/{domain}/fault_cases/*.md
-    - Or flat: data_root/{domain}/{domain}_product_*.md
+    Active construction method:
+    - all domains are equally treated as application cases
+    - LLM extraction is required
+    - no fallback path is allowed
+    - multi-domain processing is the only supported mode
+    - every markdown file under data_root/{domain}/ must satisfy the O&M contract
 
     Args:
         config: Preprocessing configuration
@@ -191,25 +212,20 @@ def run_preprocessing(
             for doc_type, documents in docs_by_type.items():
                 domain_stats[domain_id][doc_type] = len(documents)
 
-                MAX_DOC_CONTENT_LENGTH = 3000  # Truncate long documents to avoid LLM timeout
-
                 for doc in documents:
                     # Normalize content
                     normalized_content = normalize_content(doc.content)
-                    # Truncate if too long
-                    if len(normalized_content) > MAX_DOC_CONTENT_LENGTH:
-                        normalized_content = normalized_content[:MAX_DOC_CONTENT_LENGTH] + "\n... [truncated]"
+                    if len(normalized_content) > _MAX_DOC_CONTENT_LENGTH:
+                        normalized_content = normalized_content[:_MAX_DOC_CONTENT_LENGTH] + "\n... [truncated]"
                     doc.content = normalized_content
 
-                    # Extract concepts and relations
                     result = extractor.extract(doc)
 
                     if result.extraction_quality == "failed":
-                        failed += 1
-                        errors.append(f"Extraction failed for {doc.doc_id} ({domain_id}/{doc_type})")
-                        continue
+                        raise RuntimeError(
+                            f"LLM extraction returned failed for {doc.doc_id} ({domain_id}/{doc_type})"
+                        )
 
-                    # Convert to EvidenceRecord
                     record = extraction_to_evidence_record(doc, result)
                     evidence_records.append(record)
                     successful += 1
@@ -361,11 +377,14 @@ def preprocess_single_document(
         payload["llm"] = llm_config
     config = PreprocessingConfig.model_validate(payload)
 
-    # Parse document
+    inferred_doc_type = infer_doc_type_from_filename(doc_path_obj)
+    if inferred_doc_type is None:
+        inferred_doc_type = classify_doc_type(doc_path_obj.read_text(encoding="utf-8-sig"))
     doc = parse_markdown_file(
         doc_path_obj,
         domain_id=domain_id,
-        role=role
+        role=role,
+        doc_type=inferred_doc_type,
     )
 
     # Extract

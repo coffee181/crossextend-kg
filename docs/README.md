@@ -1,25 +1,50 @@
 # CrossExtend-KG Documentation
 
-本目录只保留当前主架构相关文档。
+**Updated**: 2026-04-18  
+**Scope**: Current O&M-form-first runtime and paper-facing evaluation workflow
 
-## 建议阅读顺序
+## Reading Order
 
-| 文档 | 作用 |
-|------|------|
-| `SYSTEM_DESIGN.md` | 主架构、阶段划分、运行时约束 |
-| `PIPELINE_INTEGRATION.md` | 模块接口、验证点、回归命令 |
-| `PROJECT_ARCHITECTURE.md` | 仓库结构与模块职责 |
-| `EXECUTION_MEMORY.md` | 续工执行记忆，记录当前架构、已完成优化和后续计划 |
-| `REAL_RUN_DATA_FLOW_BATTERY_20260417.md` | 真实 battery 跑通链路的逐阶段数据流文档 |
-| `REAL_RUN_DATA_FLOW_BATTERY_20260417_CN.md` | 上述真实数据流文档的中文版 |
+1. `SYSTEM_DESIGN.md`
+   Current architecture rules, runtime phases, and active assumptions.
+2. `CHANGE_SUMMARY_20260418_OM_ONLY_CLEANUP.md`
+   Repository cleanup summary for the O&M-only paper path and no-fallback tightening.
+3. `PIPELINE_INTEGRATION.md`
+   End-to-end execution checkpoints, commands, and verification notes.
+4. `PROJECT_ARCHITECTURE.md`
+   Repository layout and responsibility of each module.
+5. `EXECUTION_MEMORY.md`
+   Resume-oriented working memory: latest fixes, validated runs, and next priorities.
+6. `MANUAL_ANNOTATION_PROTOCOL.md`
+   Human gold annotation protocol for publication-grade evaluation.
+7. `REAL_RUN_DATA_FLOW_OM_3DOMAIN_20260418.md`
+   Detailed real-run narrative for the current three-domain O&M setup.
+8. `REAL_RUN_DATA_FLOW_OM_3DOMAIN_20260418_CN.md`
+   Chinese version of the same real-run narrative.
 
-## 范围说明
+## Current Truth
 
-这里不再保留评测设计、下游任务、历史实验总结或论文草案文档。
+- The active input type is `om_manual` only.
+- The current repository data covers three domains: `battery`, `cnc`, and `nev`.
+- Legacy `product_intro` and `fault_case` paths have been removed from the active preprocessing and config path.
+- The backbone is fixed at runtime.
+- The main paper-facing pipeline is `full_llm`.
+- Evaluation credibility should come from a manually annotated gold subset, not auto-generated references alone.
+- The runtime follows a no-fallback rule: unsupported markdown, missing required config, or failed LLM extraction should fail explicitly.
 
-## 相关目录
+## Real-Run Docs
 
-- `../config/`: 运行配置与模板
-- `../pipeline/`: 当前核心实现
-- `../preprocessing/`: 预处理链路
-- `../rules/`: attachment 决策过滤规则
+- `REAL_RUN_DATA_FLOW_OM_3DOMAIN_20260418.md` is the main run document for the current architecture.
+
+## Related Directories
+
+- `../config/`
+  Runtime configs, prompts, and reference templates.
+- `../preprocessing/`
+  O&M markdown to `EvidenceRecord` conversion.
+- `../pipeline/`
+  Backbone retrieval, memory, attachment, graph assembly, and export.
+- `../rules/`
+  Final attachment filtering and node-admission logic.
+- `../tests/`
+  Focused regression checks for O&M parsing, filtering, and memory deduplication.

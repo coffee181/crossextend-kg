@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LLM-based extraction for concepts and relations from industrial documents."""
+"""LLM-based extraction for concepts and relations from O&M manuals."""
 
 from __future__ import annotations
 
@@ -29,14 +29,13 @@ def load_extraction_prompt(
             "__RELATION_FAMILIES_JSON__": relation_json,
         },
     )
-
-
 class LLMExtractor:
-    """LLM-based concept/relation extractor."""
+    """LLM-based concept/relation extractor for the active O&M corpus."""
 
     def __init__(self, config: PreprocessingConfig):
         self.config = config
         self._llm_backend = build_llm_backend(config.llm)
+
         self._prompt_template = load_extraction_prompt(
             config.prompt_template_path,
             config.backbone_concepts,
@@ -47,29 +46,16 @@ class LLMExtractor:
         """Extract concepts and relations from a single document."""
         start_time = time.time()
 
-        # Format prompt with document content
         prompt = render_prompt_template(
             self._prompt_template,
             {"__DOCUMENT_CONTENT__": doc.content},
         )
 
-        # Call LLM
-        try:
-            response = self._call_llm(prompt)
-            result = self._parse_response(response, doc.doc_id)
-            result.llm_model = self.config.llm.model
-            result.processing_time_ms = int((time.time() - start_time) * 1000)
-            return result
-        except Exception as e:
-            # Return empty result on failure
-            return ExtractionResult(
-                doc_id=doc.doc_id,
-                concepts=[],
-                relations=[],
-                extraction_quality="failed",
-                llm_model=self.config.llm.model,
-                processing_time_ms=int((time.time() - start_time) * 1000)
-            )
+        response = self._call_llm(prompt)
+        result = self._parse_response(response, doc.doc_id)
+        result.llm_model = self.config.llm.model
+        result.processing_time_ms = int((time.time() - start_time) * 1000)
+        return result
 
     def extract_batch(self, docs: list[DocumentInput]) -> list[ExtractionResult]:
         """Extract from multiple documents."""

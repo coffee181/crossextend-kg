@@ -1,69 +1,71 @@
 # Preprocessing Module
 
-将工业领域 markdown 文档转换为主链路可消费的 `EvidenceRecord`。
+**Updated**: 2026-04-18
 
-## 目标
+`preprocessing/` converts raw O&M markdown into `EvidenceRecord` for the main CrossExtend-KG pipeline.
 
-预处理阶段只负责两件事：
+## Current Scope
 
-- 抽取概念提及
-- 抽取关系提及
+The active preprocessing path is designed for:
 
-它不再负责生成评估专用字段。
+- O&M manuals
+- markdown table steps such as `T1`, `T2`, `T3`
+- three current domains: `battery`, `cnc`, `nev`
 
-## 运行方式
+It is no longer optimized around the old `product_intro` / `fault_case` paper path.
+The active parser now enforces an O&M-only contract and fails explicitly on unsupported markdown instead of falling back to legacy doc types.
+
+## Current Behavior
+
+- infer `om_manual` from filenames like `BATOM_*`, `CNCOM_*`, `EVMAN_*`
+- reject markdown that does not satisfy the active O&M filename/content contract
+- strip UTF-8 BOM if present
+- preserve markdown tables for step extraction
+- use an O&M-specific prompt
+- output one unified `EvidenceRecord` file for downstream loading
+
+## Recommended Command
 
 ```bash
-crossextend-kg preprocess \
-  --config crossextend_kg/config/persistent/preprocessing.deepseek.json
+python -m crossextend_kg.cli preprocess --config D:\crossextend_kg\config\persistent\preprocessing.deepseek.json
 ```
 
-## 最小配置
+## Output Shape
 
 ```json
 {
-  "data_root": "../../data/",
-  "domain_ids": ["battery", "cnc", "nev"],
-  "output_path": "../../data/evidence_records_llm.json",
-  "role": "target",
-  "prompt_template_path": "../prompts/preprocessing_extraction.txt",
-  "llm": {
-    "base_url": "https://api.deepseek.com",
-    "api_key": "${DEEPSEEK_API_KEY}",
-    "model": "deepseek-chat"
-  }
-}
-```
-
-## 配置位置
-
-- 预处理 preset: `crossextend_kg/config/persistent/preprocessing*.json`
-- 预处理 prompt: `crossextend_kg/config/prompts/preprocessing_extraction.txt`
-
-## 输出格式
-
-```json
-{
-  "evidence_id": "fault_001",
+  "evidence_id": "BATOM_001",
   "domain_id": "battery",
   "role": "target",
-  "source_type": "fault_case",
-  "timestamp": "2026-04-17T00:00:00Z",
+  "source_type": "om_manual",
+  "timestamp": "2026-04-18T00:00:00Z",
   "raw_text": "...",
   "concept_mentions": [
     {
-      "label": "Battery Pack",
-      "description": "Energy storage unit",
+      "label": "T1 Record Coolant Condition",
+      "description": "Initial O&M inspection step",
       "node_worthy": true
     }
   ],
   "relation_mentions": [
     {
-      "label": "contains",
-      "family": "structural",
-      "head": "Battery Pack",
-      "tail": "Temperature Sensor"
+      "label": "triggers",
+      "family": "task_dependency",
+      "head": "T1 Record Coolant Condition",
+      "tail": "T2 Isolate and Expose Outlet Area"
     }
   ]
 }
 ```
+
+## Current Prompt
+
+- `config/prompts/preprocessing_extraction_om.txt`
+
+This prompt now explicitly:
+
+- keeps step rows under `Task`
+- discourages document-title extraction
+- discourages generic human-role extraction
+- grounds measurements and visual outcomes as `Signal`
+- grounds standing conditions as `State`

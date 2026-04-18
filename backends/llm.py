@@ -4,12 +4,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 import urllib.request
 from typing import Any, Protocol
 
 from .embeddings import build_api_endpoint, normalize_api_base_url
 from ..config import LLMBackendConfig
+
+
+logger = logging.getLogger(__name__)
 
 
 class LLMBackend(Protocol):
@@ -82,6 +87,9 @@ class ChatCompletionsLLMBackend:
         self.timeout_sec = config.timeout_sec
         self.max_tokens = config.max_tokens
         self.temperature = config.temperature
+        # Retry the same request a few times to absorb transient provider/network failures
+        # without changing the main architecture or introducing fallback behavior.
+        self.max_retries = 3
 
     def supports_generation(self) -> bool:
         return True
@@ -93,16 +101,35 @@ class ChatCompletionsLLMBackend:
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }
-        req = urllib.request.Request(
-            build_api_endpoint(self.base_url, "chat/completions"),
-            data=json.dumps(payload).encode("utf-8"),
-            headers=_build_headers(self.api_key),
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=self.timeout_sec) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-        message = body["choices"][0]["message"]
-        return extract_json(_normalize_chat_content(message.get("content", "")))
+        last_error: Exception | None = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                req = urllib.request.Request(
+                    build_api_endpoint(self.base_url, "chat/completions"),
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers=_build_headers(self.api_key),
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=self.timeout_sec) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                message = body["choices"][0]["message"]
+                return extract_json(_normalize_chat_content(message.get("content", "")))
+            except Exception as exc:
+                last_error = exc
+                if attempt >= self.max_retries:
+                    raise
+                delay_sec = min(2 ** (attempt - 1), 5)
+                logger.warning(
+                    "LLM request failed on attempt %d/%d: %s; retrying in %ss",
+                    attempt,
+                    self.max_retries,
+                    exc,
+                    delay_sec,
+                )
+                time.sleep(delay_sec)
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("unreachable LLM retry state")
 
 
 def build_llm_backend(config: LLMBackendConfig) -> LLMBackend:

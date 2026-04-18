@@ -122,23 +122,16 @@ class RelationConfig(BaseModel):
         return self
 
 
-class SyntheticGenerationConfig(BaseModel):
+class DataConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = False
-    output_path: str
-    num_samples: int = Field(default=10, ge=1)
-    domain_sample_counts: dict[str, int] = Field(default_factory=dict)
-
-
-class DataConfig(BaseModel):
-    synthetic_generation: SyntheticGenerationConfig
     normalize_whitespace: bool = True
 
 
 class PromptConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     attachment_judge_template_path: str
-    synthetic_generator_template_path: str
 
 
 class VariantConfig(BaseModel):
@@ -249,11 +242,9 @@ def load_pipeline_config(config_path: str | Path) -> PipelineConfig:
     base_dir = path.parent
 
     config.prompts.attachment_judge_template_path = _resolve_path(base_dir, config.prompts.attachment_judge_template_path) or ""
-    config.prompts.synthetic_generator_template_path = _resolve_path(base_dir, config.prompts.synthetic_generator_template_path) or ""
     config.runtime.artifact_root = _resolve_path(base_dir, config.runtime.artifact_root) or ""
     config.runtime.temporal_memory_path = _resolve_path(base_dir, config.runtime.temporal_memory_path)
     config.runtime.relation_constraints_path = _resolve_path(base_dir, config.runtime.relation_constraints_path)
-    config.data.synthetic_generation.output_path = _resolve_path(base_dir, config.data.synthetic_generation.output_path) or ""
 
     for domain in config.domains:
         domain.data_path = _resolve_path(base_dir, domain.data_path) or ""

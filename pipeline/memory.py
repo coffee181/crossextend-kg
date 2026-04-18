@@ -145,6 +145,16 @@ def _truncate(value: str, limit: int = 240) -> str:
     return compact[: limit - 3].rstrip() + "..."
 
 
+def _dedupe_memory_entries(entries: list[MemoryEntry]) -> list[MemoryEntry]:
+    """Deduplicate entries by memory_id, keeping the newest copy."""
+    deduped: dict[str, MemoryEntry] = {}
+    for entry in entries:
+        current = deduped.get(entry.memory_id)
+        if current is None or entry.timestamp >= current.timestamp:
+            deduped[entry.memory_id] = entry
+    return sorted(deduped.values(), key=lambda item: item.timestamp, reverse=True)
+
+
 def _build_memory_path(config: PipelineConfig) -> Path:
     """Build the MemoryBank storage path from config.
 
@@ -179,8 +189,7 @@ def load_persistent_memory_bank(config: PipelineConfig) -> list[MemoryEntry]:
     path = _build_memory_path(config)
     if not path.exists():
         return []
-    items = [MemoryEntry.model_validate(item) for item in read_jsonl(path)]
-    items.sort(key=lambda item: item.timestamp, reverse=True)
+    items = _dedupe_memory_entries([MemoryEntry.model_validate(item) for item in read_jsonl(path)])
     return items[: config.runtime.temporal_memory_max_entries]
 
 
@@ -298,7 +307,7 @@ def retrieve_historical_context(
         return {domain_id: {} for domain_id in candidates_by_domain}
 
     current_entries = build_evidence_memory_entries(records_by_domain)
-    all_entries = persistent_entries + current_entries
+    all_entries = _dedupe_memory_entries(persistent_entries + current_entries)
     if not all_entries:
         return {domain_id: {} for domain_id in candidates_by_domain}
 

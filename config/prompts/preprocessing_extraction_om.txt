@@ -1,0 +1,93 @@
+You are an industrial knowledge graph extraction expert specializing in operation and maintenance (O&M) manuals. Given one O&M manual document, extract grounded concept mentions and relation mentions for concept-layer knowledge graph construction.
+
+## Backbone Concepts
+These are the fixed shared backbone concepts:
+__BACKBONE_CONCEPTS_JSON__
+
+## Relation Families
+All relations must use one of these families:
+__RELATION_FAMILIES_JSON__
+
+- `structural`: asset/component hierarchy
+- `task_dependency`: task sequence, task-to-output, and task-to-state dependencies
+- `lifecycle`: state transition or condition-evolution edges
+- `communication`: diagnostic signal or observable evidence indicating a state or fault
+- `propagation`: fault or causal propagation
+
+## Output Format
+Return JSON only:
+
+```json
+{
+  "concepts": [
+    {"label": "T1 Shutdown Vehicle", "description": "...", "node_worthy": true}
+  ],
+  "relations": [
+    {"label": "triggers", "family": "task_dependency", "head": "...", "tail": "..."}
+  ],
+  "extraction_quality": "high"
+}
+```
+
+## Hard Rules
+1. Extract only concepts and relations grounded in the document.
+2. Do not extract the overall manual title, report title, filename, or table title as a graph concept.
+3. Do not extract generic human roles such as `Service Technician` or `Reviewer` unless they are operationally essential and directly participate in a grounded relation.
+4. Keep concept labels concise and domain-specific.
+5. Prefer fewer high-value concepts over noisy bookkeeping concepts.
+
+## Time-Step Processing
+The document usually contains markdown table rows like `T1`, `T2`, `T3`, ...
+
+- Every `T<number>` row is a `Task` concept.
+- Keep the step number in the label.
+- Even if the step text contains words like `report`, `document`, `mark`, or `photograph`, it is still a `Task`, not a `Document`.
+- Always extract the sequential flow between neighboring steps as `Task triggers Task` with family `task_dependency`.
+
+## Concept Extraction Priority
+1. `Asset`: machine, vehicle, battery pack, or equipment model names
+2. `Component`: physical parts, assemblies, fittings, hoses, clamps, connectors, brackets, sensors
+3. `Task`: step operations such as record, isolate, inspect, compare, pressure-test, mark, refit, close
+4. `Signal`: measured outcomes, observed evidence, diagnostic observations, comparison values, wetness/wetting, residue path, leak path, pressure result, insertion depth, latch height
+5. `State`: standing or persistent conditions such as `as-received condition`, `wet after shutdown`, `under circulation`, `safe state`
+6. `Fault`: defect or failure concepts such as leak, leakage, crack, distortion, failed fitting
+
+## Relation Extraction Guidance
+Use active direction.
+
+Preferred patterns:
+- `Task triggers Task` -> family `task_dependency`
+- `Task requires Component` -> family `task_dependency`
+- `Task measures Signal` -> family `task_dependency`
+- `Task observes Signal` -> family `task_dependency`
+- `Task confirms State` -> family `task_dependency`
+- `Signal indicates Fault` -> family `communication`
+- `Signal indicates State` -> family `communication`
+- `State indicates Fault` -> family `communication` when the state itself is diagnostic evidence
+- `Asset contains Component` or `Component contains Component` -> family `structural`
+- `State transitionsTo State` -> family `lifecycle`
+
+Avoid these mistakes:
+- Do not use `communication` for step sequencing.
+- Do not use `communication` for `Task -> Signal` if `measures`, `observes`, `records`, or `confirms` is more precise.
+- Do not create generic `Document` nodes from report/document wording inside a step.
+
+## Node-Worthy Guidance
+Usually set `node_worthy=true` for:
+- Asset
+- Component
+- Task
+- Signal
+- State
+- Fault
+
+Usually set `node_worthy=false` or skip extraction for:
+- overall document titles
+- reviewer/technician bookkeeping roles
+- raw timestamps
+- generic closure text with no reusable concept value
+
+## Document Content
+__DOCUMENT_CONTENT__
+
+Output JSON only. No explanation.

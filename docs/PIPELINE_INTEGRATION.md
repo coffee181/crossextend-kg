@@ -1,172 +1,138 @@
 # Pipeline Integration Verification
 
-**Updated**: 2026-04-17  
-**Status**: Main runtime only
+**Updated**: 2026-04-18  
+**Status**: Active O&M-form runtime
 
-## Overview
+## Active Entry Points
 
-This document tracks the active integration points after removing dynamic-backbone, evaluation, and downstream-task wiring.
+- Preprocessing:
+  `config/persistent/preprocessing.deepseek.json`
+- Main run:
+  `config/persistent/pipeline.deepseek.json`
+
+Both configs now target only:
+
+- `battery`
+- `cnc`
+- `nev`
+
+with:
+
+- `source_types = ["om_manual"]`
 
 ## End-to-End Flow
 
-### Phase 1: Evidence Loading
+### Phase 1: Parse and Preprocess O&M Markdown
 
-```python
-from crossextend_kg.pipeline import load_records_by_domain, aggregate_schema_candidates
-
-records_by_domain = load_records_by_domain(config)
-candidates_by_domain = aggregate_schema_candidates(records_by_domain)
-```
-
-Verification points:
-
-- records are filtered by `domain_id` and `source_types`
-- all domains use `role="target"`
-- candidate aggregation is per-domain and per-label
-- empty domains are preserved in the result map
-
-### Phase 2: Frozen Backbone Build
-
-```python
-from crossextend_kg.pipeline import build_backbone
-
-backbone_concepts, backbone_descriptions, curated_backbone_concepts = build_backbone(config)
-```
-
-Verification points:
-
-- every `seed_concept` is included
-- `seed_descriptions` are preserved
-- optional curated supplements are loaded from `domains[].ontology_seed_path`
-- no runtime LLM backbone extraction is performed
-
-### Phase 3: MemoryBank Retrieval
-
-```python
-from crossextend_kg.pipeline import load_persistent_memory_bank, retrieve_historical_context
-
-persistent_entries = load_persistent_memory_bank(config)
-historical_context = retrieve_historical_context(
-    config=config,
-    embedding_backend=embedding_backend,
-    records_by_domain=records_by_domain,
-    candidates_by_domain=candidates_by_domain,
-    persistent_entries=persistent_entries,
-)
-```
-
-Verification points:
-
-- self-retrieval is filtered by shared evidence ids
-- future memory entries are filtered by timestamp
-- same-domain hits score highest, while cross-domain hits can still contribute
-- top-k historical context is returned per candidate
-
-### Phase 4: Retrieval and Attachment
-
-```python
-from crossextend_kg.pipeline import decide_attachments_for_domain, retrieve_anchor_rankings
-
-retrievals = retrieve_anchor_rankings(
-    embedding_backend=embedding_backend,
-    backbone_descriptions=backbone_descriptions,
-    candidates=candidates,
-    top_k=config.runtime.retrieval_top_k,
-)
-
-decisions = decide_attachments_for_domain(
-    config=config,
-    variant=variant,
-    llm_backend=llm_backend,
-    domain_id=domain_id,
-    candidates=candidates,
-    retrievals=retrievals,
-    historical_context=historical_context.get(domain_id, {}),
-    backbone_descriptions=backbone_descriptions,
-    backbone_concepts=set(backbone_concepts),
-)
-```
-
-Verification points:
-
-- seed labels reuse the backbone directly
-- embedding retrieval feeds anchor proposals
-- MemoryBank context is injected only when the variant enables it
-- LLM failures raise instead of silently falling back
-
-### Phase 5: Rule Filtering
-
-```python
-from crossextend_kg.rules import filter_attachment_decision
-```
-
-Verification points:
-
-- illegal routes are rejected
-- `vertical_specialize` requires a backbone parent unless free-form growth is allowed
-- backbone labels must use `reuse_backbone`
-
-### Phase 6: Schema and Graph Assembly
-
-```python
-from crossextend_kg.pipeline import build_domain_schemas, assemble_domain_graphs
-
-schemas = build_domain_schemas(
-    config=config,
-    candidates_by_domain=candidates_by_domain,
-    decisions_by_domain=decisions_by_domain,
-    backbone_concepts=backbone_concepts,
-)
-
-domain_graphs = assemble_domain_graphs(
-    config=config,
-    variant=variant,
-    records_by_domain=records_by_domain,
-    schemas=schemas,
-    decisions_by_domain=decisions_by_domain,
-    backbone_concepts=backbone_concepts,
-)
-```
-
-Verification points:
-
-- accepted adapter concepts are materialized into domain schema
-- graph nodes and edges are exported per domain
-- snapshots are created when `enable_snapshots=true`
-- relation validation runs when enabled in runtime config
-
-### Phase 7: Export
-
-```python
-from crossextend_kg.pipeline import export_variant_run, export_benchmark_summary
-```
-
-Verification points:
-
-- variant roots export `backbone_seed.json`, `backbone_final.json`, and `construction_summary.json`
-- per-domain working directories export schema, retrieval, decision, graph, and snapshot files
-- replayable snapshots always include `nodes.jsonl`, `edges.jsonl`, and `consistency.json` even when generic JSONL export is disabled
-- latest benchmark summary is optionally refreshed
-
-## Current Regression Coverage
-
-`tests/test_crossextend_kg_regressions.py` covers:
-
-- loading persistent pipeline configs
-- frozen backbone loading without dynamic expansion
-- preprocessing config path and env resolution
-- minimal backend field sufficiency
-- legacy `host` field upgrade to `base_url`
-- reference-template JSON validity
-- absence of removed evaluation-era config fields
-
-## Validation Commands
+Command:
 
 ```bash
-python -m py_compile $(rg --files crossextend_kg tests | rg '\.py$')
-pytest -q tests/test_crossextend_kg_regressions.py
+python -m crossextend_kg.cli preprocess --config D:\crossextend_kg\config\persistent\preprocessing.deepseek.json
 ```
 
-## Known Limitation
+Verification points:
 
-`aggregate_schema_candidates()` intentionally emits concept candidates only in the active main architecture.
+- all configured domains are present under `data/`
+- filenames like `BATOM_*`, `CNCOM_*`, and `EVMAN_*` resolve to `om_manual`
+- markdown that does not match the active O&M contract fails explicitly instead of falling back to a legacy type
+- BOM markers are stripped before LLM extraction
+- raw markdown tables remain intact for step extraction
+- LLM extraction errors fail the preprocessing run instead of producing partial output
+- output file is `data/evidence_records_llm.json`
+
+Verified on 2026-04-18:
+
+- `total_docs = 3`
+- `successful_docs = 3`
+- `failed_docs = 0`
+- all output records have `source_type = "om_manual"`
+
+### Phase 2: Evidence Loading and Candidate Aggregation
+
+Verification points:
+
+- all domains load from the same `EvidenceRecord` file
+- candidates are aggregated per domain and label
+- zero-length domains fail explicitly instead of silently continuing
+
+### Phase 3: Backbone Retrieval and Memory Retrieval
+
+Verification points:
+
+- embedding routing returns backbone anchor suggestions
+- temporal memory retrieval excludes self-evidence and future evidence
+- memory entries are deduplicated by `memory_id` before retrieval scoring
+
+Verified on run `artifacts/deepseek-20260418T095937Z`:
+
+- duplicate `memory_id` hits in `historical_context.json` were checked and found to be zero for `battery`, `cnc`, and `nev`
+
+### Phase 4: Attachment and Filtering
+
+Verification points:
+
+- `T<number>` step candidates stay under `Task`
+- document-like wording inside step labels no longer causes false `document_title` rejection
+- O&M observations such as `pressure result`, `fresh wetting`, and `wet after shutdown` can survive as `Signal` or `State`
+- generic person-role nodes remain rejected
+
+### Phase 5: Graph Assembly and Relation Validation
+
+Verification points:
+
+- accepted adapter concepts materialize into graph nodes
+- relation validation rejects type-incompatible triples
+- snapshots are exported per domain
+
+Two real verification runs were executed after the O&M adaptation:
+
+1. Best dense run:
+   `artifacts/deepseek-20260418T095937Z`
+   - relation validation: `114 / 117` valid
+   - remaining invalid triples: `2`
+   - invalid family bucket: `communication`
+
+2. Latest confirmation run:
+   `artifacts/deepseek-20260418T105526Z`
+   - relation validation: `110 / 113` valid
+   - remaining invalid triples: `3`
+   - invalid family bucket: `communication`
+
+Interpretation:
+
+- the architecture is now stable for O&M manuals, including after the O&M-only cleanup
+- remaining issues are mostly extraction-label variance, not structural pipeline failure
+
+## Key Commands
+
+Preprocess:
+
+```bash
+python -m crossextend_kg.cli preprocess --config D:\crossextend_kg\config\persistent\preprocessing.deepseek.json
+```
+
+Main run:
+
+```bash
+python -m crossextend_kg.cli run --config D:\crossextend_kg\config\persistent\pipeline.deepseek.json
+```
+
+Syntax sanity:
+
+```bash
+python -m py_compile preprocessing\parser.py preprocessing\processor.py rules\filtering.py pipeline\memory.py pipeline\attachment.py
+```
+
+## Current Testing Reality
+
+There is now a small focused `tests/` directory for core O&M regressions.
+
+Current validation relies on:
+
+- `pytest -q tests`
+- targeted `py_compile`
+- artifact inspection
+- repeated real O&M runs
+- manual spot checks on `data_flow_trace.json`, `adapter_candidates.rejected_by_reason.json`, and `relation_edges.rejected_type.json`
+
+For paper preparation, this is acceptable as engineering validation, but broader regression coverage would still be worthwhile.

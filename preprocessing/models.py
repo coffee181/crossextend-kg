@@ -13,7 +13,7 @@ from ..config import LLMBackendConfig
 
 class DocumentInput(BaseModel):
     doc_id: str
-    doc_type: str
+    doc_type: str  # active corpus: om_manual
     domain_id: str
     role: Literal["target"] = "target"
     title: str = ""
@@ -42,7 +42,7 @@ class PreprocessingConfig(BaseModel):
                 Path(__file__).resolve().parent.parent
                 / "config"
                 / "prompts"
-                / "preprocessing_extraction.txt"
+                / "preprocessing_extraction_om.txt"
             ).resolve()
         )
     )

@@ -8,8 +8,7 @@
   "benchmark_name": "deepseek_full_experiment",
 
   "prompts": {
-    "attachment_judge_template_path": "../prompts/attachment_judge.txt",
-    "synthetic_generator_template_path": "../prompts/synthetic_generator_english.txt"
+    "attachment_judge_template_path": "../prompts/attachment_judge.txt"
   },
 
   "llm": {
@@ -59,12 +58,6 @@
   },
 
   "data": {
-    "synthetic_generation": {
-      "enabled": false,
-      "output_path": "../../artifacts/data/synthetic_samples.json",
-      "num_samples": 10,
-      "domain_sample_counts": {}
-    },
     "normalize_whitespace": true
   },
 
@@ -180,7 +173,7 @@
       "domain_name": "Battery System",
       "role": "target",
       "data_path": "../../data/evidence_records_llm.json",
-      "source_types": ["fault_case", "product_intro"],
+      "source_types": ["om_manual"],
       "domain_keywords": ["battery", "pack", "cell", "bms", "cooling", "capacity", "degradation"]
     },
     {
@@ -188,7 +181,7 @@
       "domain_name": "CNC Machine",
       "role": "target",
       "data_path": "../../data/evidence_records_llm.json",
-      "source_types": ["fault_case", "product_intro"],
+      "source_types": ["om_manual"],
       "domain_keywords": ["cnc", "spindle", "bearing", "servo", "axis", "motor"]
     },
     {
@@ -196,7 +189,7 @@
       "domain_name": "NEV Vehicle",
       "role": "target",
       "data_path": "../../data/evidence_records_llm.json",
-      "source_types": ["fault_case", "product_intro"],
+      "source_types": ["om_manual"],
       "domain_keywords": ["nev", "electric", "vehicle", "powertrain", "motor", "inverter"]
     }
   ]

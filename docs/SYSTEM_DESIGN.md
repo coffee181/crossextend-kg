@@ -1,148 +1,166 @@
 # CrossExtend-KG System Design
 
-**Updated**: 2026-04-17  
-**Scope**: Main architecture only
+**Updated**: 2026-04-18  
+**Scope**: Active architecture for O&M-form knowledge graph construction
 
 ## Core Rules
 
-1. **Fixed backbone**. Runtime backbone comes from `backbone.seed_concepts` plus optional curated additions from `domains[].ontology_seed_path`.
-2. **Uniform domains**. Every domain is an application case with `role="target"`. There is no privileged domain and no source-first path.
-3. **No fallback**. Invalid configuration or backend failures should raise directly instead of silently degrading behavior.
-4. **Explicit switches only**. Variants may disable retrieval, filtering, memory, or snapshots, but they still run the same core chain.
-5. **Structure-first export**. The runtime exports graph artifacts and count-based construction summaries.
+1. The backbone is fixed at runtime.
+2. All domains are treated uniformly as application cases with `role="target"`.
+3. The active input source type is `om_manual`.
+4. The main pipeline must fail explicitly when required stages break; no silent fallback path is allowed.
+5. Runtime outputs are auditable graph-construction artifacts, not downstream product-analysis or fault-case reports.
+6. Preprocessing accepts only O&M-contract markdown; unsupported files must fail instead of being re-routed into legacy types.
 
 ## Problem Framing
 
-CrossExtend-KG treats industrial KG construction as constrained schema adaptation:
+CrossExtend-KG currently treats industrial KG construction as constrained schema adaptation over O&M forms:
 
-- the shared backbone captures stable pan-industrial concepts
-- each domain contributes evidence and domain-specific candidates
-- attachment decides whether a candidate reuses the backbone, specializes it under the backbone, or is rejected
-- graph assembly materializes a domain graph with provenance and snapshots
+- preprocessing converts raw markdown manuals into `EvidenceRecord`
+- a fixed backbone provides shared upper-level anchors
+- candidate concepts are attached under the backbone or rejected
+- accepted concepts and relations are assembled into per-domain graphs with provenance and snapshots
+
+The current paper-facing objective is:
+
+- robustly adapt the pipeline to stepwise O&M manuals
+- preserve task sequence and diagnostic evidence
+- keep node admission auditable
+- evaluate with human gold rather than auto-generated pseudo-gold
+
+## Active Input Contract
+
+The repository currently uses one markdown O&M form per domain:
+
+- `data/battery/BATOM_001.md`
+- `data/cnc/CNCOM_001.md`
+- `data/nev/EVMAN_001.md`
+
+The parser now supports filename-based type inference for these O&M naming conventions and strips optional UTF-8 BOM markers before downstream extraction.
+If a markdown file does not match the active O&M filename or content contract, preprocessing should stop with an explicit error.
 
 ## Runtime Phases
 
 ### Phase 0: Preprocessing
 
-`preprocessing/` converts raw domain documents into `EvidenceRecord` JSON. The active preprocessing output contains:
+`preprocessing/` converts raw markdown manuals into `EvidenceRecord`.
 
-- `concept_mentions`
-- `relation_mentions`
-- document metadata such as `evidence_id`, `domain_id`, `timestamp`, and `source_type`
+Current O&M preprocessing behavior:
 
-Preprocessing no longer emits pseudo-gold or downstream-query fields as part of the runtime contract.
+- infer `doc_type="om_manual"` from O&M-style filenames
+- reject markdown files that do not satisfy the active O&M contract
+- keep markdown tables intact for `T1`, `T2`, ... step recognition
+- use the O&M-specific extraction prompt
+- treat step rows as `Task` concepts
+- prefer measurement/observation outcomes as `Signal`
+- prefer standing conditions as `State`
+- discourage document-title and generic-person-role extraction
+- allow much longer content windows for O&M manuals than generic docs
+- fail the preprocessing run if required prompt/config resources are missing or the LLM extraction step fails
 
 ### Phase 1: Evidence Loading
 
 `pipeline/evidence.py`:
 
-- loads records from each configured domain
-- normalizes evidence into `EvidenceUnit`
-- aggregates concept-level `SchemaCandidate` objects by domain and label
+- loads `EvidenceRecord` JSON
+- filters by configured `domain_id` and `source_types`
+- aggregates concept-level `SchemaCandidate` objects per domain
 
-### Phase 2: Backbone Build
+### Phase 2: Frozen Backbone Build
 
-`pipeline/backbone.py` builds the shared backbone once per run:
+`pipeline/backbone.py` builds the shared backbone from:
 
-- all `seed_concepts` are always included
-- `seed_descriptions` drive retrieval and prompt grounding
-- curated shared concepts may be appended from `ontology_seed_path`
+- `backbone.seed_concepts`
+- `backbone.seed_descriptions`
+- optional curated supplements from `domains[].ontology_seed_path`
 
-There is no dynamic backbone extraction in the active runtime.
+No dynamic backbone growth is active in the current runtime.
 
 ### Phase 3: Retrieval and Historical Context
 
-Two retrieval layers can guide attachment:
+Two retrieval layers guide attachment:
 
-- `pipeline/router.py`: embedding-based anchor retrieval against backbone descriptions
-- `pipeline/memory.py`: temporal memory-bank retrieval from previous runs
+- `pipeline/router.py`: embedding retrieval over backbone descriptions
+- `pipeline/memory.py`: temporal memory-bank retrieval over prior evidence, attachments, and snapshots
 
-Memory retrieval is optional per variant, but the runtime-level memory-bank infrastructure stays the same.
+Important 2026-04-18 fix:
+
+- memory entries are deduplicated by `memory_id` before embedding retrieval, so historical evidence is no longer double-counted in prompts and ranking
 
 ### Phase 4: Attachment and Filtering
 
-`pipeline/attachment.py` decides how each candidate attaches:
+`pipeline/attachment.py` decides one of three routes:
 
 - `reuse_backbone`
 - `vertical_specialize`
 - `reject`
 
-Supported attachment strategies:
+`rules/filtering.py` then enforces final legality and admission.
 
-- `llm`
-- `embedding_top1`
-- `deterministic`
+Important current filtering behavior:
 
-`rules/filtering.py` enforces route legality and blocks structurally invalid decisions.
+- reject document titles and person-role nodes
+- keep `T<number>` O&M steps under `Task`
+- re-ground observation-like candidates as `Signal` or `State` when the evidence and relation support are strong enough
+- require relation support for component-like low-value nodes
 
-### Phase 5: Graph Assembly and Snapshots
+### Phase 5: Graph Assembly and Relation Validation
 
 `pipeline/graph.py`:
 
-- materializes adapter concepts into per-domain schemas
+- materializes adapter concepts
 - converts accepted relation mentions into graph edges
-- creates `TemporalAssertion`, `SnapshotManifest`, and `SnapshotState` artifacts
-- applies relation validation when enabled by runtime config
+- creates temporal assertions and snapshots
+- validates edges against `config/persistent/relation_constraints.json`
+
+Current constraint intent:
+
+- `task_dependency` captures step sequence and task-to-output edges
+- `communication` captures diagnostic evidence such as `Signal indicates Fault`
+- `communication` also allows `State` heads when a standing condition is diagnostic evidence
 
 ### Phase 6: Export
 
 `pipeline/artifacts.py` exports:
 
-- run-level backbone files
+- run-level summaries
 - per-domain working artifacts
-- snapshot states
-- graph DB / property graph exports
-- `construction_summary.json`
+- accepted/rejected candidates
+- accepted/rejected relations
+- snapshot files
+- `latest_summary.json`
+- `data_flow_trace.json`
 
-The construction summary is structural and count-based. It reports sizes and acceptance counts rather than downstream metrics.
+## Recommended Variant
 
-## Variant Model
+The recommended paper-facing runtime is:
 
-Variants change switches on the same architecture rather than introducing different pipelines.
+- config: `config/persistent/pipeline.deepseek.json`
+- variant: `full_llm`
 
-Important switches:
+This variant keeps:
 
-- `attachment_strategy`
-- `use_embedding_routing`
-- `use_rule_filter`
-- `enable_memory_bank`
-- `enable_snapshots`
+- LLM attachment
+- embedding routing
+- rule filtering
+- temporal memory bank
+- snapshots
 
-The recommended main variant is `full_llm`.
+## Known Quality Characteristics
 
-## Artifact Shape
+The current architecture is now compatible with three-domain O&M manuals, but one important risk remains:
 
-Each variant exports:
+- extraction variance across repeated LLM runs still changes the exact candidate set and relation labels
 
-```text
-<artifact_root>/<run_prefix>-<timestamp>/<variant_id>/
-├── run_meta.json
-├── backbone_seed.json
-├── backbone_final.json
-├── backbone.json
-├── construction_summary.json
-├── temporal_memory_entries.jsonl
-└── working/<domain_id>/
-    ├── evidence_units.jsonl
-    ├── schema_candidates.jsonl
-    ├── adapter_schema.json
-    ├── adapter_candidates.json
-    ├── attachment_decisions.json
-    ├── retrievals.json
-    ├── historical_context.json
-    ├── graph_nodes.jsonl
-    ├── graph_edges.jsonl
-    ├── candidate_triples.jsonl
-    ├── final_graph.json
-    ├── snapshot_manifest.jsonl
-    ├── snapshots/<snapshot_id>/
-    │   ├── nodes.jsonl
-    │   ├── edges.jsonl
-    │   └── consistency.json
-    └── exports/
-```
+That variance is now a larger concern than architectural incompatibility. Because of that, the paper should:
 
-## Active Architectural Gaps
+- report main metrics on a human gold subset
+- describe auto-generated references as silver
+- optionally report repeated-run variance or majority-vote extraction diagnostics
 
-- Candidate aggregation is currently concept-centric by design.
-- Variant support remains in code, but the default entry points now emphasize the main architecture rather than experiments.
+## Current Gaps Worth Future Work
+
+1. Expand relation-label normalization for rare verbs such as `reflects`, `transitionsFrom`, and other low-frequency diagnostic phrasing.
+2. Reduce over-generation of zero-relation micro-components without harming useful diagnostic observations.
+3. Add a small automated regression suite for the O&M-specific filtering and preprocessing rules.
+4. Continue tightening timestamp semantics if document-native time metadata is added later.
